@@ -1,0 +1,24 @@
+en,ar,type,status,notes
+Level,المستوى|مستوى|مستويات,term,draft,Game level
+Coins,العملات|عملة|عملات|عملتان|عملتين,term,draft,Soft currency
+Gems,الجواهر|جوهرة|جواهر,term,draft,Hard currency
+Lives,الأرواح|أرواح|روح|حياة,term,draft,Retry tokens; native check: أرواح vs محاولات
+Booster,المعزز|معزز|معززات,term,draft,In-level power item
+Shop,المتجر|متجر,term,draft,
+Settings,الإعدادات|إعدادات,term,draft,
+Reward,المكافأة|مكافأة|مكافآت|مكافأتك,term,draft,
+Daily Reward,المكافأة اليومية|مكافأة يومية,term,draft,
+Leaderboard,لوحة الصدارة|لوحة المتصدرين,term,draft,
+Achievement,الإنجاز|إنجاز|إنجازات,term,draft,
+Quest,المهمة|مهمة|مهام,term,draft,
+Event,الفعالية|فعالية|فعاليات,term,draft,Live-ops event
+Chest,الصندوق|صندوق|صناديق,term,draft,Reward chest
+Unlock,فتح,term,draft,Verbal noun for buttons
+Watch Ad,مشاهدة إعلان,term,draft,Rewarded video button
+Restore Purchases,استعادة المشتريات,term,draft,Store-required button
+Privacy Policy,سياسة الخصوصية,term,draft,
+Terms of Service,شروط الخدمة,term,draft,
+Profile,الملف الشخصي,term,draft,
+Friends,الأصدقاء|أصدقاء|صديق,term,draft,
+Jackpot,المكافأة الكبرى,term,draft,Never جائزة يانصيب; flag CULTURE
+VIP,,dnt,draft,Keep Latin

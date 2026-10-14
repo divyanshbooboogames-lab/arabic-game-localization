@@ -1,0 +1,25 @@
+key,en,type,context,max_len,addressee,speaker,listener,scene
+btn_buy,Buy,ui,Shop item button,8,,,,
+btn_retry,Retry?,ui,Shown after the player loses a level,,,,,
+wallet_coins,"{count, plural, one {You have # coin} other {You have # coins}}",ui,Wallet tooltip,,,,,
+reward_coins,You earned {amount} coins!,ui,Popup after winning a level,,,,,
+hud_level,Level {0},ui,HUD label,12,,,,
+welcome_back,"Welcome back, {player_name}!",ui,Login popup; player_name is a nickname in any script,,,,,
+event_banner,<color=#FFD700>Double</color> rewards for <b>24 hours</b>!,ui,Live-ops event banner,,,,,
+tut_swipe,Swipe to match 3 or more candies of the same color.,tutorial,First tutorial step,,,,,
+npc_map,Hey! I lost my map near the old lighthouse. Can you help me find it?,dialogue,Asks the player for help,,,Sami,player,ch1_harbor
+olive_01,They took my child from me.,dialogue,Lawyer's office; 'child' is her son,,,Olive,Lawyer,ch2_office
+lawyer_01,We're definitely going to find your child.,dialogue,Reassuring her,,,Lawyer,Olive,ch2_office
+olive_02,Please... he's only six.,dialogue,Crying,,,Olive,Lawyer,ch2_office
+lawyer_02,"Don't worry, Olive. I'm sure he's safe.",dialogue,Calm and firm,,,Lawyer,Olive,ch2_office
+name_olive,Olive,ui,Speaker name tag above dialogue,,,,,
+name_lawyer,Lawyer,ui,Speaker name tag; the lawyer is a man,,,,,
+iap_buy,Buy for {price},ui,IAP button; price is the store-formatted string,,,,,
+countdown,Ends in %1$s,ui,Event countdown; %1$s is a formatted duration,,,,,
+extra_lives,Get 2 extra lives,ui,Offer popup,,,,,
+xmas_event,Christmas Event: open the gifts under the tree!,ui,Seasonal event title,,,,,
+lucky_wheel,Spin the lucky wheel for a chance to win the jackpot!,ui,Wheel opened with gems,,,,,
+push_lives,Your lives are full! Come back and beat level {level}.,push,Push notification,,,,,
+store_short,"Match-3 puzzles, daily rewards and hundreds of levels!",store,Google Play short description,80,,,,
+ad_endcard,Can you beat level 99?,ad,UA video end card,,,,,
+vip_badge,VIP,ui,Badge on profile,,,,,

@@ -1,0 +1,14 @@
+# Python
+__pycache__/
+*.pyc
+
+# Cached AI responses (regenerable, can get large)
+.cache/
+
+# Secrets: API keys live in environment variables, never in the repo
+.env
+*.key
+
+# OS clutter
+Thumbs.db
+.DS_Store
