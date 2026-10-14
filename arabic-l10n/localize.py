@@ -1082,7 +1082,10 @@ def main(argv=None):
         return {"translate": cmd_translate, "bakeoff": cmd_bakeoff, "lint": cmd_lint, "qa": cmd_qa, "score": cmd_score,
                 "export": cmd_export, "fontcheck": cmd_fontcheck, "pseudo": cmd_pseudo}[a.cmd](a)
     except JobsPending as e:
-        cmd = subprocess.list2cmdline([sys.executable, str(Path(__file__).resolve())] + list(argv if argv is not None else sys.argv[1:]))
+        # Paths made absolute, so the line works from whatever folder Claude Code runs it in
+        args = [str(Path(x).resolve()) if not x.startswith("-") and Path(x).exists() else x
+                for x in (argv if argv is not None else sys.argv[1:])]
+        cmd = subprocess.list2cmdline([sys.executable, str(Path(__file__).resolve())] + args)
         print(f"\nPAUSED: {e}. No API key or credits used.\n"
               f"Open Claude Code and say:\n"
               f"  Follow {Path(__file__).resolve().with_name('CLAUDE_CODE_MODE.md')} for this command: {cmd}\n"
