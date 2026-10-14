@@ -18,6 +18,22 @@ To see what is wrong with your current Arabic today, run QA on it:
 python localize.py qa current_ar.csv --col ar
 ```
 
+## No API key? Use your Claude subscription
+
+Run the tool with `--model claude-code --judge-model claude-code`, or tick **Use Claude subscription** in Unity (it is on by default there). The run works like this:
+
+1. The run makes no API calls. It writes the work as job files and pauses.
+2. It prints one line that starts with `Follow …CLAUDE_CODE_MODE.md`.
+3. Paste that line into Claude Code. Claude Code translates, sends review jobs to a separate subagent so the reviewer is independent, and re-runs the tool until `review.csv` is written. That usually takes 2–3 rounds.
+
+Everything after that is the same as API mode: checks, fixes, review sheet, scoring and export. Unchanged strings are still reused, so later releases only send new text.
+
+**Limits:**
+- Big games use real subscription usage. If Claude Code hits a limit, run the same command later. Answered jobs are kept, so it continues where it stopped.
+- Someone has to paste the line into Claude Code; there's no unattended overnight run.
+
+The details are in `CLAUDE_CODE_MODE.md`.
+
 ## Plural syntax: ICU or Unity Smart Strings
 
 Both are supported. Plurals and gender choices can be written in either syntax:

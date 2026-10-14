@@ -84,9 +84,11 @@ py arabic-game-localization/arabic-l10n/test_localize.py
 
 **Check:** the output ends with `ar_qa self-test ok` and `localize end-to-end test ok`. If not, stop and report the full error.
 
-## Step 4: API key (the developer does this, not you)
+## Step 4: API key (the developer does this, not you). Optional.
 
-Tell the developer:
+**Skip this step if the team translates with a Claude subscription instead of an API key.** That is the default: `"useSubscription": true` in step 6. In that mode, Claude Code answers translation jobs as described in `arabic-l10n/CLAUDE_CODE_MODE.md`, and no key is needed. Ask the developer which they use.
+
+If they use an API key, tell the developer:
 
 1. Get the team's Anthropic API key from whoever manages it.
 2. Run this in a terminal, with the real key in place of the placeholder:
@@ -132,6 +134,7 @@ The developer must also add the Arabic locales in **Edit > Project Settings > Lo
     "syntax": "auto",
     "batchApi": false,
     "retranslateAll": false,
+    "useSubscription": true,
     "font": "Assets/Fonts/ArabicFont.ttf",
     "shaped": true,
     "exportTo": "Assets/Localization/Arabic/strings.csv"
@@ -204,7 +207,9 @@ py arabic-game-localization/arabic-l10n/localize.py pseudo "<project>/Localizati
 From **Tools > Arabic Localization**:
 
 1. **Check English Source:** finds English strings that can't become correct Arabic.
-2. **Translate:** asks for confirmation (paid), runs in the background, then opens the review sheet.
+2. **Translate:** asks for confirmation, then runs in the background.
+   - **With an API key:** paid; the review sheet opens when it finishes.
+   - **With "Use Claude subscription" (the default):** it pauses and prints a `Follow …CLAUDE_CODE_MODE.md …` line. Paste that line into Claude Code; Claude Code finishes the run, and then you open the review sheet.
 3. **Open Review Sheet:** linguists edit `final` and set `approved=y`.
 4. **Score Linguist Audit:** the 99% pass/fail check.
 5. **Export to Unity:** blocks on errors; on success, press **Import** on the CSV extension.

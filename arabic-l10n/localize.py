@@ -20,6 +20,8 @@ Source CSV: key, en, [type, context, max_len, addressee, screenshot, speaker, li
 characters.csv (next to the source CSV): name, ar, gender (female | male), notes   e.g. Olive,أوليف,female,anxious mother
 Models: Claude ids (default claude-opus-5-5) use ANTHROPIC_API_KEY. `openai:<model>` uses `pip install openai`,
   OPENAI_API_KEY and optional OPENAI_BASE_URL, so any OpenAI-compatible endpoint (OpenAI, Gemini, Azure) works.
+  `claude-code` uses NO API key: requests become job files that Claude Code answers on your subscription
+  (see CLAUDE_CODE_MODE.md); re-run the same command after each round until it finishes.
 """
 import argparse
 import base64
@@ -30,6 +32,7 @@ import json
 import math
 import random
 import re
+import subprocess
 import sys
 import threading
 import time
@@ -80,7 +83,7 @@ PLURAL_EXAMPLES = {
 
 JUDGE_ROLE = """You are an independent senior Arabic linguist doing MQM error annotation on translations produced by another system. The style guide above is the specification; judge against it, including its MQM severity definitions.
 
-For each item, list every real error in `translation`. `variant` says what it should be: `ar` = MSA master, `gulf`/`levant`/`egypt` = dialect overlays that must genuinely be in that dialect. Most good translations have no errors: return an empty list for those, and do not report personal preferences as errors. But do not let a fluent string pass when it changes meaning, addresses the player in a gender the style guide forbids, is in the wrong variety, breaks number-noun agreement, or breaks a placeholder, tag or ICU form. Attached screenshots show where strings with a matching `screenshot` name appear. For dialogue, check that self-references agree with the `speaker`'s gender, second-person forms agree with `addressee`, and lines of one `scene` read as one consistent conversation. When an item has `calibration`, those are similar strings our own linguists annotated ("none" = no errors): match their standard of what counts as an error and how severe.
+For each item, list every real error in `translation`. `variant` says what it should be: `ar` = MSA master, `gulf`/`levant`/`egypt` = dialect overlays that must genuinely be in that dialect. Most good translations have no errors: return an empty list for those, and do not report personal preferences as errors. But do not let a fluent string pass when it changes meaning, addresses the player in a gender the style guide forbids, is in the wrong variety, breaks number-noun agreement, or breaks a placeholder, tag or ICU form. Attached screenshots show where strings with a matching `screenshot` name appear. For dialogue, check that self-references agree with the `speaker`'s gender, second-person forms agree with `addressee`, and lines of one `scene` read as one consistent conversation. `translator_note` is a query the translator already raised for the human reviewer; judge the translation itself, and report an error only if the translation is wrong, not merely because the note exists. When an item has `calibration`, those are similar strings our own linguists annotated ("none" = no errors): match their standard of what counts as an error and how severe.
 
 `span` is the exact erroneous substring of the translation ("" for omissions). `why` is one short English sentence. If there is any error, `suggestion` is the full corrected translation; otherwise "". """
 
@@ -330,10 +333,81 @@ def _batch_anthropic(model, effort, reqs):
     return out
 
 
+class JobsPending(Exception):
+    """Raised in claude-code mode when requests are waiting for Claude Code to answer them."""
+
+
+def schema_errors(v, s, path="$"):
+    """Errors in v against the JSON-schema subset this file uses (object, array, string, enum)."""
+    if "enum" in s and v not in s["enum"]:
+        return [f"{path}: {v!r} is not one of {s['enum']}"]
+    t = s.get("type")
+    if t == "object":
+        if not isinstance(v, dict):
+            return [f"{path}: expected an object"]
+        errs = [f"{path}: missing '{k}'" for k in s.get("required", []) if k not in v]
+        return errs + [e for k, sub in s.get("properties", {}).items() if k in v for e in schema_errors(v[k], sub, f"{path}.{k}")]
+    if t == "array":
+        if not isinstance(v, list):
+            return [f"{path}: expected an array"]
+        return [e for i, x in enumerate(v) for e in schema_errors(x, s["items"], f"{path}[{i}]")]
+    if t == "string" and not isinstance(v, str):
+        return [f"{path}: expected a string"]
+    return []
+
+
+def _claude_code_jobs(todo, cache_dir, save):
+    """claude-code mode: no API call. A valid answer file becomes a cached result; every other request is
+    written to <out>/jobs/pending/ for Claude Code (CLAUDE_CODE_MODE.md), and the run pauses with JobsPending.
+    Requests are content-hashed, so the re-run asks for exactly the same jobs and picks the answers up."""
+    jobs = Path(cache_dir).parent / "jobs"
+    for d in ("pending", "answers", "context"):
+        (jobs / d).mkdir(parents=True, exist_ok=True)
+    kinds = {id(T_SCHEMA): "translate", id(FIX_SCHEMA): "fix", id(J_SCHEMA): "review", id(LINT_SCHEMA): "rewrite"}
+
+    def stash(data, ext, mode="w"):  # shared context (style guide, roles, screenshots) is written once
+        p = jobs / "context" / f"{hashlib.sha256(data if mode == 'wb' else data.encode()).hexdigest()[:16]}{ext}"
+        if not p.exists():
+            p.write_bytes(data) if mode == "wb" else p.write_text(data, encoding="utf-8")
+        return f"context/{p.name}"
+
+    for old in (jobs / "pending").glob("*.json"):  # leftovers from an earlier, different run: never worth answering
+        if old.stem not in todo:
+            old.unlink()
+    waiting, bad = 0, []
+    for k, (system, content, schema) in todo.items():
+        answer, job = jobs / "answers" / f"{k}.json", jobs / "pending" / f"{k}.json"
+        if answer.exists():
+            try:
+                data = json.loads(answer.read_text(encoding="utf-8-sig"))
+                errs = schema_errors(data, schema)
+            except json.JSONDecodeError as e:
+                data, errs = None, [f"not valid JSON ({e})"]
+            if not errs:
+                save(k, data)
+                job.unlink(missing_ok=True)
+                continue
+            bad.append(f"answers/{answer.name}: {'; '.join(errs[:3])}")
+        images = {content[i]["text"].removeprefix("Screenshot ").rstrip(":"):
+                  stash(base64.standard_b64decode(content[i + 1]["source"]["data"]),
+                        "." + content[i + 1]["source"]["media_type"].split("/")[1], "wb")
+                  for i in range(1, len(content) - 1, 2)}
+        job.write_text(json.dumps({
+            "job": kinds.get(id(schema), "task"), "read_first": [stash(s, ".md") for s in system],
+            "task": content[0]["text"], "images": images, "items": json.loads(content[-1]["text"]),
+            "answer_file": f"answers/{k}.json", "answer_schema": schema}, ensure_ascii=False, indent=1), encoding="utf-8")
+        waiting += 1
+    for b in bad:
+        print(f"  ! invalid answer, fix it and re-run: {b}", file=sys.stderr)
+    if waiting:
+        raise JobsPending(f"{waiting} job(s) are waiting for Claude Code in {jobs / 'pending'}")
+
+
 def call_many(reqs, model, effort, cache_dir, workers=4, batch_api=False):
     """Run (system_blocks, content_blocks, schema) requests; results come back in request order.
     Each result is cached on disk by content hash, so a crashed or repeated run never pays twice."""
-    prov, name = model.split(":", 1) if model.startswith(("openai:", "anthropic:")) else ("anthropic", model)
+    prov, name = model.split(":", 1) if model.startswith(("openai:", "anthropic:")) else (
+        ("claude-code", model) if model == "claude-code" else ("anthropic", model))
     keys = [hashlib.sha256(json.dumps([model, effort, r], ensure_ascii=False).encode()).hexdigest()[:32] for r in reqs]
     cache = Path(cache_dir)
     cache.mkdir(parents=True, exist_ok=True)
@@ -347,7 +421,9 @@ def call_many(reqs, model, effort, cache_dir, workers=4, batch_api=False):
         (cache / f"{k}.json").write_text(json.dumps(v, ensure_ascii=False), encoding="utf-8")
         done[k] = v
 
-    if todo and batch_api and prov == "anthropic":
+    if todo and prov == "claude-code":
+        _claude_code_jobs(todo, cache, save)
+    elif todo and batch_api and prov == "anthropic":
         for k, v in _batch_anthropic(name, effort, todo).items():
             save(k, v)
     elif todo:
@@ -545,6 +621,8 @@ def pipeline(ctx, model, judge_model):
         j = {"key": r["key"], "variant": r["variant"], "type": r["type"], "context": r["context"], "en": r["en"],
              "addressee": r["_it"]["addressee"], **dialogue(r), "glossary": r["_it"]["glossary"],
              "screenshot": r["screenshot"], "translation": r["final"]}
+        if r["note"]:
+            j["translator_note"] = r["note"]
         ex = calibration_examples(ctx, r["en"], r["variant"])
         if ex:
             j["calibration"] = ex
@@ -698,6 +776,8 @@ def cmd_lint(a):
                 for i in range(0, len(payload), 50)]
         try:
             sugg = {s["key"]: s for res in call_many(reqs, a.model, a.effort, Path(a.out) / ".cache", a.workers) for s in res["items"]}
+        except JobsPending:
+            raise  # claude-code mode: pause for Claude Code, not "rewrites failed"
         except Exception as e:  # rewrites are optional; the lint report must still be written
             print(f"  ! AI rewrites skipped ({type(e).__name__}: {e})", file=sys.stderr)
             sugg = {}
@@ -998,8 +1078,16 @@ def main(argv=None):
     ps.add_argument("source")
     ps.add_argument("--out", default="out")
     a = p.parse_args(argv)
-    return {"translate": cmd_translate, "bakeoff": cmd_bakeoff, "lint": cmd_lint, "qa": cmd_qa, "score": cmd_score,
-            "export": cmd_export, "fontcheck": cmd_fontcheck, "pseudo": cmd_pseudo}[a.cmd](a)
+    try:
+        return {"translate": cmd_translate, "bakeoff": cmd_bakeoff, "lint": cmd_lint, "qa": cmd_qa, "score": cmd_score,
+                "export": cmd_export, "fontcheck": cmd_fontcheck, "pseudo": cmd_pseudo}[a.cmd](a)
+    except JobsPending as e:
+        cmd = subprocess.list2cmdline([sys.executable, str(Path(__file__).resolve())] + list(argv if argv is not None else sys.argv[1:]))
+        print(f"\nPAUSED: {e}. No API key or credits used.\n"
+              f"Open Claude Code and say:\n"
+              f"  Follow {Path(__file__).resolve().with_name('CLAUDE_CODE_MODE.md')} for this command: {cmd}\n"
+              f"Claude Code answers the jobs and re-runs the command until it finishes (usually 2-3 rounds).")
+        return 3
 
 
 if __name__ == "__main__":

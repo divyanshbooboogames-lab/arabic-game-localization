@@ -174,6 +174,33 @@ def main():
         localize.write_csv(d / "bake" / "review.csv", bk, ["system"] + localize.REVIEW_FIELDS)
         assert localize.main(["score", str(d / "bake" / "review.csv"), "--calibration", str(d / "cal2.csv")]) == 1
 
+        # Claude Code mode: no API key. Jobs are written, "Claude Code" answers them, the re-run continues.
+        calls.clear()
+        cc = ["translate", str(d / "src.csv"), "--out", str(d / "cc"), "--model", "claude-code",
+              "--judge-model", "claude-code", "--no-reuse"] + common
+        schemas = {"translate": localize.T_SCHEMA, "fix": localize.FIX_SCHEMA, "review": localize.J_SCHEMA}
+        jobs, rounds, broke = d / "cc" / "jobs", [], False
+        while localize.main(cc) == 3:
+            pend = sorted((jobs / "pending").glob("*.json"))
+            rounds.append(sorted(json.loads(p.read_text(encoding="utf-8"))["job"] for p in pend))
+            for p in pend:
+                job = json.loads(p.read_text(encoding="utf-8"))
+                if job["job"] == "translate":
+                    assert all((jobs / f).exists() for f in [*job["read_first"], *job["images"].values()])
+                system = [(jobs / f).read_text(encoding="utf-8") for f in job["read_first"]]
+                ans = fake("claude-code")("claude-code", None, (system, [{"type": "text", "text": json.dumps(job["items"])}],
+                                                                schemas[job["job"]]))
+                if not broke:  # the first answer is malformed: it must be rejected and re-asked, never cached
+                    ans, broke = {"items": [{"key": "olive_01"}]}, True
+                (jobs / job["answer_file"]).write_text(json.dumps(ans, ensure_ascii=False), encoding="utf-8")
+            assert len(rounds) < 6, rounds
+        assert rounds == [["translate"], ["translate"], ["fix"], ["review"]], rounds
+        assert not list((jobs / "pending").glob("*.json")) and {p for p, m, r in calls} == {"claude-code"}  # no API
+        cc_rows = {(r["key"], r["variant"]): r for r in rows(d / "cc" / "review.csv")}
+        assert cc_rows[("reward", "ar")]["final"] == REWARD_OK and cc_rows[("btn_retry", "ar")]["judge"].startswith("minor/")
+        assert localize.schema_errors({"items": [{"key": "a"}]}, localize.FIX_SCHEMA) == [
+            "$.items[0]: missing 'variant'", "$.items[0]: missing 'fixed'"]
+
         # fake-Arabic test strings: same layout as strings.csv, placeholders intact, Arabic script, longer
         localize.main(["pseudo", str(d / "src.csv"), "--out", str(d / "pseudo")])
         ps = {r["key"]: r for r in rows(d / "pseudo" / "pseudo_strings.csv")}

@@ -33,6 +33,7 @@ public class ArabicLocSettings
     public string syntax = "auto"; // auto | icu | smart (Unity Smart Strings)
     public bool batchApi = false;
     public bool retranslateAll = false;
+    public bool useSubscription = true; // translate through Claude Code on a Claude subscription: no API key, no credits
     public string font = "Assets/Fonts/ArabicFont.ttf";
     public bool shaped = true;
     public string exportTo = "Assets/Localization/Arabic/strings.csv";
@@ -99,12 +100,13 @@ public class ArabicLocalizationWindow : EditorWindow
             s.syntax = SyntaxIds[EditorGUILayout.Popup(new GUIContent("Plural syntax", "Auto detects it from the English strings"), syn, SyntaxLabels)];
             s.batchApi = EditorGUILayout.Toggle(new GUIContent("Half-price batch mode", "Claude Batches API: 50% cheaper, results usually within an hour"), s.batchApi);
             s.retranslateAll = EditorGUILayout.Toggle(new GUIContent("Retranslate everything", "Off: unchanged approved strings are reused for free. On: after a style-guide change"), s.retranslateAll);
+            s.useSubscription = EditorGUILayout.Toggle(new GUIContent("Use Claude subscription (no API key)", "Claude Code does the translating on your subscription; the models above and batch mode are then ignored"), s.useSubscription);
             s.font = EditorGUILayout.TextField(new GUIContent("Arabic font file", ".ttf/.otf used by your Arabic TMP font asset"), s.font);
             s.shaped = EditorGUILayout.Toggle(new GUIContent("Pre-shaped text (RTLTMPro)", "Font must contain Arabic presentation forms"), s.shaped);
             s.exportTo = EditorGUILayout.TextField(new GUIContent("Export to", "Where the final strings.csv is copied inside Assets"), s.exportTo);
             if (EditorGUI.EndChangeCheck())
                 File.WriteAllText(Path.Combine(Root, SettingsFile), JsonUtility.ToJson(s, true));
-            if (string.IsNullOrEmpty(Environment.GetEnvironmentVariable("ANTHROPIC_API_KEY")))
+            if (!s.useSubscription && string.IsNullOrEmpty(Environment.GetEnvironmentVariable("ANTHROPIC_API_KEY")))
                 EditorGUILayout.HelpBox("ANTHROPIC_API_KEY is not visible to Unity. Set it as a user environment variable, then restart Unity Hub and Unity. (Not needed if you signed in with `ant auth login`.)", MessageType.Warning);
         }
 
@@ -133,17 +135,21 @@ public class ArabicLocalizationWindow : EditorWindow
         EditorGUILayout.EndScrollView();
     }
 
+    string Translator => s.useSubscription ? "claude-code" : s.model;
+    string Reviewer => s.useSubscription ? "claude-code" : s.judgeModel;
+
     void Lint() => Run("Check English source",
-        new List<string> { "lint", Abs(s.source), "--out", Abs(s.outDir), "--suggest", "--model", s.model, "--syntax", s.syntax },
+        new List<string> { "lint", Abs(s.source), "--out", Abs(s.outDir), "--suggest", "--model", Translator, "--syntax", s.syntax },
         code => Open(Path.Combine(Abs(s.outDir), "source_lint.csv")));
 
     void Translate()
     {
-        if (!EditorUtility.DisplayDialog("Translate to Arabic",
-                $"Send {s.source} to {s.model} (translator) and {s.judgeModel} (reviewer)?\nThis uses your paid API account.",
+        if (!EditorUtility.DisplayDialog("Translate to Arabic", s.useSubscription
+                ? $"Prepare {s.source} as translation jobs for Claude Code?\nNo API key or credits: Claude Code does the work on your Claude subscription."
+                : $"Send {s.source} to {s.model} (translator) and {s.judgeModel} (reviewer)?\nThis uses your paid API account.",
                 "Translate", "Cancel")) return;
-        var args = new List<string> { "translate", Abs(s.source), "--out", Abs(s.outDir), "--model", s.model, "--judge-model", s.judgeModel };
-        if (s.batchApi) args.Add("--batch-api");
+        var args = new List<string> { "translate", Abs(s.source), "--out", Abs(s.outDir), "--model", Translator, "--judge-model", Reviewer };
+        if (s.batchApi && !s.useSubscription) args.Add("--batch-api");
         if (s.retranslateAll) args.Add("--no-reuse");
         AddFormatArgs(args);
         Run("Translate", args, code => { if (code == 0) OpenReview(); });
@@ -255,6 +261,8 @@ public class ArabicLocalizationWindow : EditorWindow
             proc.Dispose();
             proc = null;
             log.AppendLine($"[{running} finished, exit code {code}]");
+            if (code == 3)
+                log.AppendLine("Waiting for Claude Code: paste the 'Follow ...' line above into Claude Code. It answers the jobs and finishes the run; then continue here (e.g. 3. Open Review Sheet).");
             var handler = onExit;
             onExit = null;
             handler?.Invoke(code);
